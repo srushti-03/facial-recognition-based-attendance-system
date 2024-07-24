@@ -6,15 +6,15 @@ import psycopg2
 from datetime import date, datetime
 import tkinter as tk
 from tkinter import messagebox
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageOps
 
 class SimpleFacerec:
     def __init__(self):
         self.conn = psycopg2.connect(
             dbname="attendance_db",  # Replace with your database name
             user="postgres",         # Replace with your database username
-            password="srushti",       # Replace with your database password
-            host="localhost"          # Replace with your database host
+            password="srushti",      # Replace with your database password
+            host="localhost"         # Replace with your database host
         )
         self.cur = self.conn.cursor()
 
@@ -34,33 +34,40 @@ class SimpleFacerec:
         self.root = tk.Tk()
         self.root.title("Face Recognition Attendance System")
 
-        # Create a frame for the video feed
-        self.video_frame = tk.Frame(self.root, bd=2, relief=tk.SUNKEN)
-        self.video_frame.grid(row=0, column=0, padx=10, pady=10)
+        # Set window dimensions
+        self.root.geometry("1200x800")
 
-        # Create a canvas to display the video feed
-        self.canvas = tk.Canvas(self.video_frame, width=800, height=600)
-        self.canvas.pack()
+        # Create main frames
+        self.left_frame = tk.Frame(self.root, bd=2, relief=tk.SUNKEN, bg="#f0f0f0")
+        self.left_frame.grid(row=0, column=0, padx=10, pady=10, sticky='nsew')
 
-        # Create a frame for the control elements
-        self.control_frame = tk.Frame(self.root)
-        self.control_frame.grid(row=0, column=1, padx=10, pady=10, sticky='n')
+        self.right_frame = tk.Frame(self.root, bd=2, relief=tk.SUNKEN, bg="#f0f0f0")
+        self.right_frame.grid(row=0, column=1, padx=10, pady=10, sticky='nsew')
 
-        # Create a label for attendance list heading
-        self.attendance_heading = tk.Label(self.control_frame, text="Present Today", font=("Arial", 18, "bold"))
+        # Configure grid weights
+        self.root.grid_columnconfigure(0, weight=1)
+        self.root.grid_columnconfigure(1, weight=1)
+        self.root.grid_rowconfigure(0, weight=1)
+
+        # Left frame (video feed and controls)
+        self.canvas = tk.Canvas(self.left_frame, bg="black")
+        self.canvas.pack(fill=tk.BOTH, expand=True, pady=10)
+
+        self.welcome_label = tk.Label(self.left_frame, text="", font=("Arial", 18), bg="#f0f0f0")
+        self.welcome_label.pack(pady=10)
+
+        self.image_label = tk.Label(self.left_frame, bg="#f0f0f0")
+        self.image_label.pack(pady=10)
+
+        self.login_button = tk.Button(self.left_frame, text="Login", command=self.login, bg="#28a745", fg="white", font=("Arial", 24), width=15, height=2)
+        self.login_button.pack(pady=10)
+
+        # Right frame (attendance list)
+        self.attendance_heading = tk.Label(self.right_frame, text="Present Today", font=("Arial", 18, "bold"), bg="#f0f0f0")
         self.attendance_heading.pack(pady=10)
 
-        # Create a Listbox for today's attendance
-        self.attendance_listbox = tk.Listbox(self.control_frame, font=("Arial", 18), width=30, height=15)
+        self.attendance_listbox = tk.Listbox(self.right_frame, font=("Arial", 18), width=30, height=25)
         self.attendance_listbox.pack(pady=10)
-
-        # Create a label for welcome message
-        self.welcome_label = tk.Label(self.control_frame, text="", font=("Arial", 18))
-        self.welcome_label.pack(pady=20)
-
-        # Create a button for manual login
-        self.login_button = tk.Button(self.control_frame, text="Login", command=self.login, bg="green", fg="white", font=("Arial", 24), width=15, height=2)
-        self.login_button.pack(pady=20)
 
         # Initialize OpenCV video capture
         self.cap = cv2.VideoCapture(0)
@@ -114,6 +121,9 @@ class SimpleFacerec:
             self.cur.execute(insert_sql, (name, self.today_date, current_time, status))
             self.conn.commit()
             self.update_attendance_listbox()
+            return "Welcome"
+        else:
+            return "Already marked present"
 
     def detect_known_faces(self, frame):
         face_locations = face_recognition.face_locations(frame)
@@ -132,9 +142,22 @@ class SimpleFacerec:
 
             if name != "Unknown":
                 status = "Present"
-                self.record_attendance(name, status)
+                welcome_message = self.record_attendance(name, status)
                 detected_names.append(name)
-                self.welcome_label.config(text=f"Welcome {name}")
+                self.welcome_label.config(text=f"{welcome_message} {name}")
+
+                # Fetch the image of the person from the dataset and display it
+                image_path = os.path.join(r"C:\Users\LENOVO\Desktop\ig drones\face-recognition\dataset", name)
+                if os.path.isdir(image_path):
+                    for filename in os.listdir(image_path):
+                        image_path = os.path.join(image_path, filename)
+                        if os.path.isfile(image_path):
+                            person_image = Image.open(image_path)
+                            person_image = ImageOps.fit(person_image, (150, 150), Image.LANCZOS)
+                            person_image = ImageTk.PhotoImage(person_image)
+                            self.image_label.config(image=person_image)
+                            self.image_label.image = person_image
+                            break
 
             cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
             cv2.putText(frame, name, (left + 6, bottom - 6), cv2.FONT_HERSHEY_DUPLEX, 1.0, (255, 255, 255), 1)
@@ -163,6 +186,7 @@ class SimpleFacerec:
         ret, frame = self.cap.read()
         if ret:
             self.detect_known_faces(frame)
+            frame = cv2.resize(frame, (self.canvas.winfo_width(), self.canvas.winfo_height()))
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             img = Image.fromarray(frame)
             imgtk = ImageTk.PhotoImage(image=img)
